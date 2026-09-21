@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Support\Collection;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -86,5 +87,56 @@ class User extends Authenticatable
     public function isPlatformUser(): bool
     {
         return $this->hasRole(['super_admin', 'platform_admin']);
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        return $this->hasRole('super_admin');
+    }
+
+    public function rolesForSchool(?string $schoolId = null): Collection
+    {
+        $roleIds = $this->userRoles()
+            ->when($schoolId, fn ($q) => $q->where(
+                fn ($qq) => $qq->where('school_id', $schoolId)->orWhereNull('school_id')
+            ))
+            ->when(! $schoolId, fn ($q) => $q->whereNull('school_id'))
+            ->pluck('role_id');
+
+        return Role::whereIn('id', $roleIds)->get([
+            'id',
+            'name',
+            'slug',
+            'is_system',
+        ]);
+    }
+
+    public function permissionsForSchool(?string $schoolId = null): Collection
+    {
+        return $this->rolesForSchool($schoolId)
+            ->flatMap->permissions
+            ->pluck('slug')
+            ->unique()
+            ->values();
+    }
+
+    public function hasPermission(string $permission, ?string $schoolId = null): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        return $this->permissionsForSchool($schoolId)->contains($permission);
+    }
+
+    public function assignRole(string|Role $role, ?string $schoolId = null): UserRole
+    {
+        $roleId = $role instanceof Role
+            ? $role->id
+            : Role::where('slug', $role)->valueOrFail('id');
+
+        return UserRole::updateOrCreate(
+            ['user_id' => $this->id, 'school_id' => $schoolId, 'role_id' => $roleId],
+        );
     }
 }

@@ -10,13 +10,13 @@ use Illuminate\Contracts\Support\Responsable;
 class ApiException extends Exception implements Responsable
 {
     public function __construct(
-        public readonly ApiErrorCode $code,
+        public readonly ApiErrorCode $errorCode,
         string $message = '',
         public readonly array $details = [],
         public readonly ?int $status = null,
         ?Exception $previous = null,
     ) {
-        parent::__construct($message !== '' ? $message : $code->value, 0, $previous);
+        parent::__construct($message !== '' ? $message : $errorCode->value, 0, $previous);
     }
 
     public static function make(
@@ -28,13 +28,18 @@ class ApiException extends Exception implements Responsable
         return new static($code, $message, $details, $status);
     }
 
+    public function errorCode(): ApiErrorCode
+    {
+        return $this->errorCode;
+    }
+
     public function toResponse($request): \Illuminate\Http\JsonResponse
     {
         return ApiResponse::error(
-            code: $this->code,
+            code: $this->errorCode,
             message: $this->getMessage(),
             details: $this->details,
-            status: $this->status ?? $this->code->statusCode(),
+            status: $this->status ?? $this->errorCode->statusCode(),
         );
     }
 }
